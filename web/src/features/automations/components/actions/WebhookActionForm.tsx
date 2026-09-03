@@ -37,9 +37,11 @@ import {
 import { WebhookSecretRender } from "../WebhookSecretRender";
 import { CodeView } from "@/src/components/ui/CodeJsonViewer";
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast";
+import { areWebhookUrlsEquivalent } from "../../webhookUrl";
 
 export const webhookSchema = z.object({
   url: z.url(),
+  originalUrl: z.string().optional(),
   headers: z.array(
     z.object({
       name: z.string().refine(
@@ -105,6 +107,14 @@ export const WebhookActionForm: React.FC<WebhookActionFormProps> = ({
     form.setValue(`webhook.headers.${index}.isSecret`, !currentValue);
   };
 
+  const currentUrl = form.watch("webhook.url");
+  const originalUrl = form.watch("webhook.originalUrl");
+  const isUrlChanged =
+    typeof originalUrl === "string" &&
+    typeof currentUrl === "string" &&
+    currentUrl.length > 0 &&
+    !areWebhookUrlsEquivalent(currentUrl, originalUrl);
+
   return (
     <div className="space-y-4">
       <FormField
@@ -126,6 +136,9 @@ export const WebhookActionForm: React.FC<WebhookActionFormProps> = ({
             <FormDescription>
               The HTTP URL to call when the trigger fires. We will send a POST
               request to this URL. Only HTTPS URLs are allowed for security.
+              {isUrlChanged
+                ? " Enter new values for secret headers when changing the webhook URL."
+                : ""}
             </FormDescription>
             <FormMessage />
           </FormItem>

@@ -14,6 +14,26 @@ const formData = {
   },
 };
 
+const webhookFormData = (
+  overrides: {
+    url?: string;
+    originalUrl?: string;
+    headers?: {
+      name: string;
+      value: string;
+      displayValue: string;
+      isSecret: boolean;
+      wasSecret: boolean;
+    }[];
+  } = {},
+) => ({
+  webhook: {
+    url: overrides.url ?? "https://example.com/hook",
+    originalUrl: overrides.originalUrl,
+    headers: overrides.headers ?? [],
+  },
+});
+
 const apiVersionFor = (eventSource?: TriggerEventSource) => {
   const config = handler.buildActionConfig(formData, eventSource);
   if (config.type !== "WEBHOOK") throw new Error("expected webhook config");
@@ -41,5 +61,52 @@ describe("WebhookActionHandler.buildActionConfig apiVersion", () => {
 
   it("no eventSource: falls back to { prompt: v1 }", () => {
     expect(apiVersionFor(undefined)).toEqual({ prompt: "v1" });
+  });
+});
+
+describe("WebhookActionHandler URL and secret header validation", () => {
+  it("requires secret header values when the webhook URL changes", () => {
+    const result = handler.validateFormData(
+      webhookFormData({
+        originalUrl: "https://example.com/hook",
+        url: "https://example.com/other-hook",
+        headers: [
+          {
+            name: "x-api-key",
+            value: "",
+            displayValue: "secr...-123",
+            isSecret: true,
+            wasSecret: true,
+          },
+        ],
+      }),
+    );
+
+    expect(result).toEqual({
+      isValid: false,
+      errors: [
+        "Secret request headers are required when changing the webhook URL",
+      ],
+    });
+  });
+
+  it("allows an update without secret header values for an equivalent URL", () => {
+    const result = handler.validateFormData(
+      webhookFormData({
+        originalUrl: "https://example.com/hook",
+        url: "https://example.com/hook",
+        headers: [
+          {
+            name: "x-api-key",
+            value: "",
+            displayValue: "secr...-123",
+            isSecret: true,
+            wasSecret: true,
+          },
+        ],
+      }),
+    );
+
+    expect(result).toEqual({ isValid: true });
   });
 });

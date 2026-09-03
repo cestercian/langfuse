@@ -348,6 +348,37 @@ describe("Blob Storage Integrations API", () => {
       expect(response.body.exportFrequency).toBe("weekly");
     });
 
+    it("should reject an endpoint change without a new secret access key", async () => {
+      await makeZodVerifiedAPICall(
+        BlobStorageIntegrationResponseSchema,
+        "PUT",
+        "/api/public/integrations/blob-storage",
+        {
+          ...validBlobStorageConfig,
+          projectId: testProject1Id,
+        },
+        createBasicAuthHeader(testApiKey, testApiSecretKey),
+        200,
+      );
+
+      const result = await makeAPICall<{ message: string }>(
+        "PUT",
+        "/api/public/integrations/blob-storage",
+        {
+          ...validBlobStorageConfig,
+          projectId: testProject1Id,
+          endpoint: "https://example.com",
+          secretAccessKey: "",
+        },
+        createBasicAuthHeader(testApiKey, testApiSecretKey),
+      );
+
+      expect(result.status).toBe(400);
+      expect(result.body.message).toContain(
+        "Secret access key is required when changing the blob storage endpoint",
+      );
+    });
+
     it("should validate required fields", async () => {
       const invalidBody = {
         projectId: testProject1Id,

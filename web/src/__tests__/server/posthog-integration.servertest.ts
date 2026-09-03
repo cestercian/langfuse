@@ -847,6 +847,56 @@ describe("PostHog Integration legacy export source cutoff gate", () => {
       expect(row.enabled).toBe(false);
     });
 
+    it("rejects a hostname change without a new API key", async () => {
+      const { caller, project } = await prepare();
+      await caller.posthogIntegration.update({
+        projectId: project.id,
+        ...baseConfig,
+      });
+
+      await expect(
+        caller.posthogIntegration.update({
+          projectId: project.id,
+          ...baseConfig,
+          posthogHostname: "https://eu.posthog.com",
+          posthogProjectApiKey: "",
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message:
+          "PostHog Project API Key is required when changing the hostname",
+      });
+
+      const row = await prisma.posthogIntegration.findUniqueOrThrow({
+        where: { projectId: project.id },
+      });
+      expect(row.posthogHostName).toBe("https://us.posthog.com/");
+      expect(decrypt(row.encryptedPosthogApiKey)).toBe(
+        baseConfig.posthogProjectApiKey,
+      );
+    });
+
+    it("allows a hostname change when a new API key is provided", async () => {
+      const { caller, project } = await prepare();
+      await caller.posthogIntegration.update({
+        projectId: project.id,
+        ...baseConfig,
+      });
+
+      await caller.posthogIntegration.update({
+        projectId: project.id,
+        posthogHostname: "https://eu.posthog.com",
+        posthogProjectApiKey: "phc_rotated_key_67890",
+        enabled: true,
+      });
+
+      const row = await prisma.posthogIntegration.findUniqueOrThrow({
+        where: { projectId: project.id },
+      });
+      expect(row.posthogHostName).toBe("https://eu.posthog.com/");
+      expect(decrypt(row.encryptedPosthogApiKey)).toBe("phc_rotated_key_67890");
+    });
+
     it("create with a blank key → BAD_REQUEST", async () => {
       const { caller, project } = await prepare();
       await expect(

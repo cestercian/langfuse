@@ -17,3 +17,14 @@ export const posthogIntegrationFormSchema = z.object({
     .enum(AnalyticsIntegrationExportSource)
     .default(AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS),
 });
+
+export function arePosthogHostnamesEquivalent(
+  firstHostname: string,
+  secondHostname: string,
+): boolean {
+  try {
+    return new URL(firstHostname).href === new URL(secondHostname).href;
+  } catch {
+    return firstHostname === secondHostname;
+  }
+}

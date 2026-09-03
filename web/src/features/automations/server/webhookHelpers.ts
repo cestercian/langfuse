@@ -14,6 +14,7 @@ import {
   validateWebhookURL,
 } from "@langfuse/shared/src/server";
 import { TRPCError } from "@trpc/server";
+import { areWebhookUrlsEquivalent } from "../webhookUrl";
 
 interface WebhookConfigOptions {
   actionConfig: ActionCreate;
@@ -62,10 +63,15 @@ export async function processWebhookActionConfig({
   const { secretKey: newSecretKey, displaySecretKey: newDisplaySecretKey } =
     generateWebhookSecret();
 
+  const isUrlChanged =
+    existingActionConfig !== undefined &&
+    !areWebhookUrlsEquivalent(actionConfig.url, existingActionConfig.url);
+
   // Process headers and generate final action config
   const finalActionConfig = processWebhookHeaders(
     actionConfig,
     existingActionConfig,
+    isUrlChanged,
   );
   return {
     finalActionConfig: {
@@ -85,12 +91,14 @@ export async function processWebhookActionConfig({
  * 1. Merging legacy headers with new requestHeaders
  * 2. Handling header removal (headers not in input are removed)
  * 3. Preserving existing values when empty values are submitted
- * 4. Encrypting secret headers based on secret flag
- * 5. Generating display values for secret headers
+ * 4. Rejecting reuse of secret headers when the destination URL changes
+ * 5. Encrypting secret headers based on secret flag
+ * 6. Generating display values for secret headers
  */
 function processWebhookHeaders(
   actionConfig: WebhookActionCreate,
   existingConfig: WebhookActionConfigWithSecrets | undefined,
+  isUrlChanged: boolean,
 ): WebhookActionConfigWithSecrets {
   // Get existing headers for comparison
   const existingLegacyHeaders = existingConfig?.headers ?? {}; // legacy headers
@@ -109,9 +117,20 @@ function processWebhookHeaders(
     { secret: boolean; value: string }
   > = {};
 
-  // If no headers are provided in input, preserve all existing headers
-  // This allows URL-only updates without requiring all headers to be resent
+  const hasExistingSecretHeaders = Object.values(mergedExistingHeaders).some(
+    (header) => header.secret,
+  );
+
+  // If no headers are provided in input, preserve existing headers.
+  // Secret headers cannot be preserved across a URL change.
   if (Object.keys(inputRequestHeaders).length === 0) {
+    if (isUrlChanged && hasExistingSecretHeaders) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Secret request headers are required when changing the webhook URL",
+      });
+    }
     for (const [key, headerObj] of Object.entries(mergedExistingHeaders)) {
       finalRequestHeaders[key] = headerObj;
     }
@@ -146,6 +165,13 @@ function processWebhookHeaders(
 
       // If value is empty, preserve existing value if it exists
       if (headerObj.value.trim() === "" && existingHeader) {
+        if (isUrlChanged && existingHeader.secret) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Secret request headers are required when changing the webhook URL",
+          });
+        }
         finalRequestHeaders[key] = existingHeader;
       } else if (headerObj.value.trim() !== "") {
         // Only process non-empty values
