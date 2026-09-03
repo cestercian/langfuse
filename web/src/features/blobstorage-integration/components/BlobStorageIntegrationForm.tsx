@@ -66,8 +66,22 @@ export const BlobStorageIntegrationForm = ({
               "This export source is not available on this deployment. Select an available export source to save.",
           });
         }
+        const persistedEndpoint = initialValues.endpoint || null;
+        const nextEndpoint = data.endpoint || null;
+        const endpointChanged = persistedEndpoint !== nextEndpoint;
+        const hasAccessKey =
+          Boolean(initialValues.accessKeyId?.trim()) ||
+          Boolean(data.accessKeyId?.trim());
+        if (endpointChanged && !data.secretAccessKey?.trim() && hasAccessKey) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["secretAccessKey"],
+            message:
+              "Secret access key is required when changing the blob storage endpoint",
+          });
+        }
       }),
-    [exportSourceCtx],
+    [exportSourceCtx, initialValues.accessKeyId, initialValues.endpoint],
   );
 
   const blobStorageForm = useForm({

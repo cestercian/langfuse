@@ -742,6 +742,128 @@ describe("webCallouts router", () => {
     expect(stored?.requestHeaderKeys).toEqual(["Authorization", "X-New"]);
   });
 
+  it("rejects blank existing request header values when the URL changes", async () => {
+    const { caller, prismaStub, projectId } = await prepare();
+    const endpoint = await createEndpoint(caller, projectId, {
+      requestHeaders: {
+        Authorization: "Bearer secret-token",
+      },
+    });
+
+    await expect(
+      caller.webCallouts.upsert({
+        projectId,
+        id: endpoint.id,
+        name: "Default",
+        url: "https://attacker.example/callout",
+        enabled: true,
+        toastMessage: "Sent to app",
+        requestHeaders: {
+          Authorization: "",
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message:
+        "Secret request headers are required when changing the web callout URL",
+    });
+
+    const stored = prismaStub.endpoints.find(
+      (candidate) => candidate.id === endpoint.id,
+    );
+    expect(stored?.url).toBe("https://example.com/callout");
+    expect(stored?.requestHeaders).toBe(
+      'encrypted:{"Authorization":"Bearer secret-token"}',
+    );
+    expect(stored?.requestHeaderKeys).toEqual(["Authorization"]);
+  });
+
+  it("preserves blank existing request header values when the URL is equivalent", async () => {
+    const { caller, prismaStub, projectId } = await prepare();
+    const endpoint = await createEndpoint(caller, projectId, {
+      requestHeaders: {
+        Authorization: "Bearer secret-token",
+      },
+    });
+
+    await caller.webCallouts.upsert({
+      projectId,
+      id: endpoint.id,
+      name: "Default",
+      url: "https://example.com:443/callout",
+      enabled: true,
+      toastMessage: "Sent to app",
+      requestHeaders: {
+        Authorization: "",
+      },
+    });
+
+    const stored = prismaStub.endpoints.find(
+      (candidate) => candidate.id === endpoint.id,
+    );
+    expect(stored?.url).toBe("https://example.com:443/callout");
+    expect(stored?.requestHeaders).toBe(
+      'encrypted:{"Authorization":"Bearer secret-token"}',
+    );
+    expect(stored?.requestHeaderKeys).toEqual(["Authorization"]);
+  });
+
+  it("updates the URL when secret request headers are re-entered", async () => {
+    const { caller, prismaStub, projectId } = await prepare();
+    const endpoint = await createEndpoint(caller, projectId, {
+      requestHeaders: {
+        Authorization: "Bearer secret-token",
+      },
+    });
+
+    await caller.webCallouts.upsert({
+      projectId,
+      id: endpoint.id,
+      name: "Default",
+      url: "https://example.com/new-callout",
+      enabled: true,
+      toastMessage: "Sent to app",
+      requestHeaders: {
+        Authorization: "Bearer rotated-token",
+      },
+    });
+
+    const stored = prismaStub.endpoints.find(
+      (candidate) => candidate.id === endpoint.id,
+    );
+    expect(stored?.url).toBe("https://example.com/new-callout");
+    expect(stored?.requestHeaders).toBe(
+      'encrypted:{"Authorization":"Bearer rotated-token"}',
+    );
+    expect(stored?.requestHeaderKeys).toEqual(["Authorization"]);
+  });
+
+  it("clears request headers when the URL changes and all configured keys are removed", async () => {
+    const { caller, prismaStub, projectId } = await prepare();
+    const endpoint = await createEndpoint(caller, projectId, {
+      requestHeaders: {
+        Authorization: "Bearer secret-token",
+      },
+    });
+
+    await caller.webCallouts.upsert({
+      projectId,
+      id: endpoint.id,
+      name: "Default",
+      url: "https://example.com/new-callout",
+      enabled: true,
+      toastMessage: "Sent to app",
+      requestHeaders: {},
+    });
+
+    const stored = prismaStub.endpoints.find(
+      (candidate) => candidate.id === endpoint.id,
+    );
+    expect(stored?.url).toBe("https://example.com/new-callout");
+    expect(stored?.requestHeaders).toBeNull();
+    expect(stored?.requestHeaderKeys).toEqual([]);
+  });
+
   it("rejects blank values for new or renamed request headers", async () => {
     const { caller, prismaStub, projectId } = await prepare();
     const endpoint = await createEndpoint(caller, projectId, {

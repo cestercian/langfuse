@@ -11,12 +11,14 @@ import {
   type ActionDomain,
 } from "@langfuse/shared";
 import { z } from "zod";
+import { areWebhookUrlsEquivalent } from "../../webhookUrl";
 
 // Define the form schema for webhook actions
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Used via z.infer
 const WebhookActionFormSchema = z.object({
   webhook: z.object({
     url: z.url("Invalid URL"),
+    originalUrl: z.string().optional(),
     headers: z
       .array(
         z.object({
@@ -91,14 +93,17 @@ export class WebhookActionHandler implements BaseActionHandler<WebhookActionForm
   }
 
   getDefaultValues(automation?: AutomationDomain): WebhookActionFormData {
+    const url =
+      (automation?.action?.type === "WEBHOOK" &&
+        automation?.action?.config &&
+        "url" in automation.action.config &&
+        automation.action.config.url) ||
+      "";
+
     return {
       webhook: {
-        url:
-          (automation?.action?.type === "WEBHOOK" &&
-            automation?.action?.config &&
-            "url" in automation.action.config &&
-            automation.action.config.url) ||
-          "",
+        url,
+        originalUrl: url || undefined,
         headers: this.parseHeaders(automation),
       },
     };
@@ -114,8 +119,26 @@ export class WebhookActionHandler implements BaseActionHandler<WebhookActionForm
       errors.push("Webhook URL is required");
     }
 
+    const currentUrl = formData.webhook?.url;
+    const originalUrl = formData.webhook?.originalUrl;
+    const isUrlChanged =
+      originalUrl !== undefined &&
+      currentUrl !== undefined &&
+      currentUrl.length > 0 &&
+      !areWebhookUrlsEquivalent(currentUrl, originalUrl);
+
     // Validate headers
     if (formData.webhook?.headers) {
+      const hasSecretHeaderWithoutValue = formData.webhook.headers.some(
+        (header) =>
+          header.name.trim() && header.isSecret && !header.value.trim(),
+      );
+      if (isUrlChanged && hasSecretHeaderWithoutValue) {
+        errors.push(
+          "Secret request headers are required when changing the webhook URL",
+        );
+      }
+
       formData.webhook.headers.forEach((header: HeaderPair, index: number) => {
         // Only validate non-empty headers
         if (header.name.trim() || header.value.trim()) {

@@ -12,7 +12,10 @@ import {
   protectedProjectProcedure,
 } from "@/src/server/api/trpc";
 import { decrypt, encrypt } from "@langfuse/shared/encryption";
-import { posthogIntegrationFormSchema } from "@/src/features/posthog-integration/types";
+import {
+  arePosthogHostnamesEquivalent,
+  posthogIntegrationFormSchema,
+} from "@/src/features/posthog-integration/types";
 import { TRPCError } from "@trpc/server";
 import { env } from "@/src/env.mjs";
 import { validateWebhookURL } from "@langfuse/shared/src/server";
@@ -115,13 +118,32 @@ export const posthogIntegrationRouter = createTRPCRouter({
             exportSource: true,
             createdAt: true,
             encryptedPosthogApiKey: true,
+            posthogHostName: true,
           },
         });
 
+      const hasNewApiKey =
+        typeof input.posthogProjectApiKey === "string" &&
+        input.posthogProjectApiKey.length > 0;
+      const isHostnameChanged =
+        existingIntegration !== null &&
+        !arePosthogHostnamesEquivalent(
+          input.posthogHostname,
+          existingIntegration.posthogHostName,
+        );
+
+      if (isHostnameChanged && !hasNewApiKey) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "PostHog Project API Key is required when changing the hostname",
+        });
+      }
+
       // Write-only credential: blank/omitted keeps the persisted encrypted
-      // value (write-only credential).
-      const encryptedPosthogApiKey = input.posthogProjectApiKey
-        ? encrypt(input.posthogProjectApiKey)
+      // value only when the hostname is unchanged.
+      const encryptedPosthogApiKey = hasNewApiKey
+        ? encrypt(input.posthogProjectApiKey as string)
         : existingIntegration?.encryptedPosthogApiKey;
       if (!encryptedPosthogApiKey) {
         throw new TRPCError({

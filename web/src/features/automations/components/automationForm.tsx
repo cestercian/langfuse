@@ -470,6 +470,7 @@ export const AutomationForm = ({
         actionType: "WEBHOOK" as const,
         webhook: {
           url: webhookDefaults.webhook.url || "",
+          originalUrl: webhookDefaults.webhook.originalUrl,
           headers: webhookDefaults.webhook.headers || [],
         },
       };

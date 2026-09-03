@@ -128,6 +128,8 @@ export async function upsertBlobStorageIntegration(params: {
         runStartedAt: true,
         createdAt: true,
         exportSource: true,
+        endpoint: true,
+        secretAccessKey: true,
       },
     });
 
@@ -140,6 +142,15 @@ export async function upsertBlobStorageIntegration(params: {
           "Secret access key is required for new configuration",
         );
       }
+    }
+
+    const isEndpointChanged =
+      existing !== null &&
+      (existing.endpoint ?? null) !== (data.endpoint ?? null);
+    if (isEndpointChanged && !secretAccessKey && existing?.secretAccessKey) {
+      throw new InvalidRequestError(
+        "Secret access key is required when changing the blob storage endpoint",
+      );
     }
 
     const modeChanged = existing && existing.exportMode !== data.exportMode;

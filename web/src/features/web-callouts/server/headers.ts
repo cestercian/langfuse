@@ -6,6 +6,7 @@ import {
   WEB_CALLOUT_BLOCKED_HEADER_NAMES,
   WEB_CALLOUT_HEADER_NAME_PATTERN,
 } from "@/src/features/web-callouts/headerRules";
+import { WEB_CALLOUT_URL_CHANGE_HEADER_REQUIRED_MESSAGE } from "@/src/features/web-callouts/webCalloutUrl";
 import { decrypt, encrypt } from "@langfuse/shared/encryption";
 
 const WEB_CALLOUT_MAX_HEADER_COUNT = 20;
@@ -22,9 +23,11 @@ export type StoredWebCalloutHeaders = {
 export const processHeadersForStorage = ({
   inputHeaders,
   existingHeaders,
+  isUrlChanged = false,
 }: {
   inputHeaders: WebCalloutHeaders;
   existingHeaders: WebCalloutHeaders;
+  isUrlChanged?: boolean;
 }): StoredWebCalloutHeaders => {
   const requestHeaders: WebCalloutHeaders = {};
   const normalizedHeaderNames = new Set<string>();
@@ -55,6 +58,13 @@ export const processHeadersForStorage = ({
 
     const existingValue = findExistingHeaderValue(name, existingHeaders);
     if (existingValue !== undefined) {
+      if (isUrlChanged) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: WEB_CALLOUT_URL_CHANGE_HEADER_REQUIRED_MESSAGE,
+        });
+      }
+
       requestHeaders[name] = existingValue;
       continue;
     }

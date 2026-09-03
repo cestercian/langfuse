@@ -21,6 +21,7 @@ import {
   withWebCalloutInFlightLimit,
   type WebCalloutLimitContext,
 } from "@/src/features/web-callouts/server/rateLimit";
+import { areWebCalloutUrlsEquivalent } from "@/src/features/web-callouts/webCalloutUrl";
 import { LangfuseUserAgent } from "@langfuse/shared";
 import { fetchWithSecureRedirects, logger } from "@langfuse/shared/src/server";
 import {
@@ -110,6 +111,9 @@ export const upsertWebCalloutEndpoint = async ({
     });
   }
 
+  const isUrlChanged =
+    existingEndpoint != null &&
+    !areWebCalloutUrlsEquivalent(input.url, existingEndpoint.url);
   const shouldMergeExistingHeaders =
     Object.keys(input.requestHeaders).length > 0;
   const headers = processHeadersForStorage({
@@ -118,6 +122,7 @@ export const upsertWebCalloutEndpoint = async ({
       existingEndpoint && shouldMergeExistingHeaders
         ? decryptWebCalloutHeaders(existingEndpoint.requestHeaders)
         : {},
+    isUrlChanged,
   });
 
   const data = {

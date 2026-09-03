@@ -3,7 +3,7 @@ import type { Session } from "next-auth";
 
 import { appRouter } from "@/src/server/api/root";
 import { createInnerTRPCContext } from "@/src/server/api/trpc";
-import { encrypt } from "@langfuse/shared/encryption";
+import { decrypt, encrypt } from "@langfuse/shared/encryption";
 import { prisma } from "@langfuse/shared/src/db";
 import {
   BlobStorageIntegrationProcessingQueue,
@@ -1287,6 +1287,78 @@ describe("Blob Storage Integration tRPC Router", () => {
         where: { projectId: project.id },
       });
       expect(row.fileType).toBe("PARQUET");
+    });
+  });
+
+  describe("secret reuse on endpoint change", () => {
+    it("rejects an endpoint change without a new secret access key", async () => {
+      const { caller, project } = await prepare();
+      await caller.blobStorageIntegration.update({
+        projectId: project.id,
+        ...baseConfig,
+      });
+
+      await expect(
+        caller.blobStorageIntegration.update({
+          projectId: project.id,
+          ...baseConfig,
+          endpoint: "https://example.com",
+          secretAccessKey: "",
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message:
+          "Secret access key is required when changing the blob storage endpoint",
+      });
+
+      const row = await prisma.blobStorageIntegration.findUniqueOrThrow({
+        where: { projectId: project.id },
+      });
+      expect(row.endpoint).toBeNull();
+      expect(decrypt(row.secretAccessKey!)).toBe(baseConfig.secretAccessKey);
+    });
+
+    it("keeps the existing secret when the endpoint is unchanged", async () => {
+      const { caller, project } = await prepare();
+      await caller.blobStorageIntegration.update({
+        projectId: project.id,
+        ...baseConfig,
+      });
+
+      await caller.blobStorageIntegration.update({
+        projectId: project.id,
+        ...baseConfig,
+        secretAccessKey: "",
+        enabled: false,
+      });
+
+      const row = await prisma.blobStorageIntegration.findUniqueOrThrow({
+        where: { projectId: project.id },
+      });
+      expect(row.endpoint).toBeNull();
+      expect(row.enabled).toBe(false);
+      expect(decrypt(row.secretAccessKey!)).toBe(baseConfig.secretAccessKey);
+    });
+
+    it("allows an endpoint change when a new secret access key is provided", async () => {
+      const { caller, project } = await prepare();
+      await caller.blobStorageIntegration.update({
+        projectId: project.id,
+        ...baseConfig,
+      });
+
+      await caller.blobStorageIntegration.update({
+        projectId: project.id,
+        ...baseConfig,
+        endpoint: "https://example.com",
+        secretAccessKey: "rotated-secret-key",
+      });
+
+      const row = await prisma.blobStorageIntegration.findUniqueOrThrow({
+        where: { projectId: project.id },
+      });
+      expect(row.endpoint).toBe("https://example.com");
+      expect(decrypt(row.secretAccessKey!)).toBe("rotated-secret-key");
     });
   });
 });

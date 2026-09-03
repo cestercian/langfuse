@@ -28,7 +28,10 @@ import {
   TooltipContent,
 } from "@/src/components/ui/tooltip";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
-import { posthogIntegrationFormSchema } from "@/src/features/posthog-integration/types";
+import {
+  arePosthogHostnamesEquivalent,
+  posthogIntegrationFormSchema,
+} from "@/src/features/posthog-integration/types";
 import { PostHogStatusSection } from "@/src/features/posthog-integration/components/PostHogStatusSection";
 import {
   LEGACY_ANALYTICS_EXPORTER_CUTOFF,
@@ -195,6 +198,21 @@ const PostHogIntegrationSettings = ({
             code: "custom",
             path: ["posthogProjectApiKey"],
             message: "PostHog Project API Key is required",
+          });
+        }
+        if (
+          state?.posthogHostName &&
+          !arePosthogHostnamesEquivalent(
+            data.posthogHostname,
+            state.posthogHostName,
+          ) &&
+          !data.posthogProjectApiKey
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["posthogProjectApiKey"],
+            message:
+              "PostHog Project API Key is required when changing the hostname",
           });
         }
         if (!isExportSourceSelectable(data.exportSource, exportSourceCtx)) {
