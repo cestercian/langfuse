@@ -3,7 +3,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Pencil, Plus, Trash2, Webhook, X } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
-import { z } from "zod";
 
 import { ActionButton } from "@/src/components/ActionButton";
 import { StatusBadge } from "@/src/components/ui/StatusBadge/StatusBadge";
@@ -47,69 +46,14 @@ import {
 import { showErrorToast } from "@/src/features/notifications/showErrorToast";
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast";
 import { useHasProjectAccess } from "@/src/features/rbac";
+import { areWebCalloutUrlsEquivalent } from "@/src/features/web-callouts/webCalloutUrl";
 import {
-  WEB_CALLOUT_BLOCKED_HEADER_NAMES,
-  WEB_CALLOUT_HEADER_NAME_PATTERN,
-} from "@/src/features/web-callouts/headerRules";
+  webCalloutFormSchema,
+  type WebCalloutFormValues,
+} from "@/src/features/web-callouts/webCalloutFormSchema";
 import { api, type RouterOutputs } from "@/src/utils/api";
 
 type WebCalloutEndpoint = RouterOutputs["webCallouts"]["all"][number];
-
-const webCalloutFormSchema = z
-  .object({
-    id: z.string().optional(),
-    name: z.string().trim().min(1).max(100),
-    url: z.url(),
-    enabled: z.boolean(),
-    toastMessage: z.string().trim().min(1).max(200),
-    headers: z.array(
-      z.object({
-        name: z.string(),
-        value: z.string(),
-      }),
-    ),
-  })
-  .superRefine((data, ctx) => {
-    const seenHeaderNames = new Set<string>();
-
-    data.headers.forEach((header, index) => {
-      const name = header.name.trim();
-
-      if (!name) {
-        return;
-      }
-
-      const lowerName = name.toLowerCase();
-
-      if (!WEB_CALLOUT_HEADER_NAME_PATTERN.test(name)) {
-        ctx.addIssue({
-          code: "custom",
-          message: "Invalid header name.",
-          path: ["headers", index, "name"],
-        });
-      }
-
-      if (WEB_CALLOUT_BLOCKED_HEADER_NAMES.has(lowerName)) {
-        ctx.addIssue({
-          code: "custom",
-          message: "This header is set by Langfuse and cannot be customized.",
-          path: ["headers", index, "name"],
-        });
-      }
-
-      if (seenHeaderNames.has(lowerName)) {
-        ctx.addIssue({
-          code: "custom",
-          message: "Header names must be unique.",
-          path: ["headers", index, "name"],
-        });
-      }
-
-      seenHeaderNames.add(lowerName);
-    });
-  });
-
-type WebCalloutFormValues = z.infer<typeof webCalloutFormSchema>;
 
 export function WebCalloutSettingsPage(props: { projectId: string }) {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -375,6 +319,14 @@ function WebCalloutEndpointDialog(props: {
     control: form.control,
     name: "headers",
   });
+  const currentUrl = form.watch("url");
+  const originalUrl = form.watch("originalUrl");
+  const isUrlChanged =
+    typeof originalUrl === "string" &&
+    originalUrl.length > 0 &&
+    typeof currentUrl === "string" &&
+    currentUrl.length > 0 &&
+    !areWebCalloutUrlsEquivalent(currentUrl, originalUrl);
 
   useEffect(() => {
     if (props.open) {
@@ -452,6 +404,9 @@ function WebCalloutEndpointDialog(props: {
                     <FormDescription>
                       HTTP or HTTPS URL. Custom ports are allowed. The endpoint
                       is called from the Langfuse backend.
+                      {isUrlChanged
+                        ? " Enter new values for secret headers when changing the web callout URL, or remove those headers to clear them."
+                        : ""}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -502,17 +457,19 @@ function WebCalloutEndpointDialog(props: {
                 <FormDescription className="mb-2">
                   Optional headers added to the backend POST. Content-Type is
                   set automatically. Leave values empty for existing header
-                  names to keep encrypted values.
+                  names to keep encrypted values
+                  {isUrlChanged
+                    ? ". Re-enter secret values when changing the URL, or remove those headers."
+                    : "."}
                 </FormDescription>
                 <div className="space-y-2">
                   {fields.map((field, index) => {
                     const currentHeaderName = form.watch(
                       `headers.${index}.name`,
                     );
-                    const preservesExistingValue = hasExistingHeaderName(
-                      props.endpoint,
-                      currentHeaderName,
-                    );
+                    const preservesExistingValue =
+                      !isUrlChanged &&
+                      hasExistingHeaderName(props.endpoint, currentHeaderName);
 
                     return (
                       <div
@@ -655,6 +612,7 @@ const endpointToFormValues = (
   endpoint: WebCalloutEndpoint | null,
 ): WebCalloutFormValues => ({
   id: endpoint?.id,
+  originalUrl: endpoint?.url,
   name: endpoint?.name ?? "Default",
   url: endpoint?.url ?? "",
   enabled: endpoint?.enabled ?? true,
